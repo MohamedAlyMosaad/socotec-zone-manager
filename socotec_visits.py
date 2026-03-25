@@ -562,6 +562,18 @@ with st.sidebar:
         unsafe_allow_html=True
     )
 
+    st.markdown(
+        '<div style="margin-top:24px;padding-top:14px;border-top:1px solid #162f4f;">'
+        '<div style="font-size:9px;text-transform:uppercase;letter-spacing:0.12em;'
+        'color:#1e4060;font-weight:600;margin-bottom:5px;">Built by</div>'
+        '<div style="font-size:12.5px;color:#6aaad4;font-weight:600;'
+        'letter-spacing:0.01em;">Mohamed Mossad</div>'
+        '<div style="font-size:10px;color:#2a5070;margin-top:2px;">'
+        'SOCOTEC Arabia</div>'
+        '</div>',
+        unsafe_allow_html=True
+    )
+
 # ─────────────────────────────────────────────
 #  LOAD DATA
 # ─────────────────────────────────────────────
