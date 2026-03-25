@@ -371,6 +371,18 @@ def init_db():
             created_at   TEXT
         )
     """)
+    # Change log — tracks every add/edit so nothing is ever silently lost
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS change_log (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            action      TEXT NOT NULL,
+            area        TEXT,
+            detail      TEXT,
+            changed_by  TEXT,
+            changed_at  TEXT,
+            synced      INTEGER DEFAULT 0
+        )
+    """)
     conn.commit()
     conn.close()
 
@@ -413,6 +425,28 @@ def save_custom_area(area, city, province, inspector, team_leader,
 def delete_custom_area(row_id):
     conn = get_conn()
     conn.execute("DELETE FROM custom_areas WHERE id=?", (row_id,))
+    conn.commit()
+    conn.close()
+
+def log_change(action, area, detail, changed_by):
+    """Record every change so the weekly sync export is complete."""
+    conn = get_conn()
+    conn.execute(
+        "INSERT INTO change_log (action,area,detail,changed_by,changed_at) VALUES (?,?,?,?,?)",
+        (action, area, detail, changed_by, now_str())
+    )
+    conn.commit()
+    conn.close()
+
+def load_unsynced_changes():
+    conn = get_conn()
+    df = pd.read_sql("SELECT * FROM change_log WHERE synced=0 ORDER BY changed_at DESC", conn)
+    conn.close()
+    return df
+
+def mark_all_synced():
+    conn = get_conn()
+    conn.execute("UPDATE change_log SET synced=1")
     conn.commit()
     conn.close()
 
@@ -572,6 +606,7 @@ with st.sidebar:
     nav_opts = ["Zone Directory", "Area Manager"]
     if user_role == "Team Leader":
         nav_opts.append("Coverage Manager")
+        nav_opts.append("Weekly Sync")
 
     page = st.radio("", nav_opts, label_visibility="collapsed")
 
@@ -579,6 +614,20 @@ with st.sidebar:
     if st.button("Refresh", use_container_width=True):
         st.cache_data.clear()
         st.rerun()
+
+    # Pending sync counter
+    try:
+        _unsync = load_unsynced_changes()
+        if len(_unsync) > 0:
+            st.markdown(
+                f'<div style="margin-top:10px;background:#fff3cd;border:1px solid #f0b429;' 
+                f'border-radius:7px;padding:8px 12px;font-size:12px;color:#5c3d00;">' 
+                f'⚠️ <b>{len(_unsync)} unsynced change(s)</b><br>' 
+                f'<span style="font-size:11px;">Go to Weekly Sync to export</span></div>',
+                unsafe_allow_html=True
+            )
+    except:
+        pass
 
     st.markdown(
         f'<div style="font-size:11px;color:#3a6080;margin-top:6px;line-height:1.7;">'
@@ -790,6 +839,9 @@ elif page == "Area Manager":
                     else:
                         save_custom_area(area_v.strip(), city_v.strip(), prov_v.strip(),
                                          final_insp, tl_v, rd6_v, rd7_v, user_name, notes_v)
+                        log_change("ADD", area_v.strip(),
+                                   f"Inspector: {final_insp} | City: {city_v} | TL: {tl_v}",
+                                   user_name)
                         st.success(f"Saved: **{area_v}** → {final_insp}")
                         st.cache_data.clear()
                         st.rerun()
@@ -890,6 +942,10 @@ elif page == "Area Manager":
                                     final_insp, e_tl, e_rd6, e_rd7,
                                     user_name, e_notes, row_id=row_id
                                 )
+                                action_type = "EDIT" if row_id else "ADD"
+                                log_change(action_type, e_area.strip(),
+                                           f"Inspector: {final_insp} | TL: {e_tl} | RD6: {e_rd6}",
+                                           user_name)
                                 st.success(f"Saved: **{e_area}** → {final_insp}")
                                 st.cache_data.clear()
                                 st.rerun()
@@ -993,6 +1049,10 @@ elif page == "Coverage Manager":
                     st.error("End date must be after start date.")
                 else:
                     save_coverage(orig, sub, af, sd, ed, rsn, user_name)
+                    log_change("COVERAGE",
+                               af if af else "All areas",
+                               f"{orig} → {sub} | {sd} to {ed} | Reason: {rsn}",
+                               user_name)
                     st.success(f"Rule saved: **{sub}** covers **{orig}**")
                     st.rerun()
 
@@ -1046,3 +1106,141 @@ elif page == "Coverage Manager":
                 if c in ref.columns]
         st.dataframe(ref[show].reset_index(drop=True),
                      use_container_width=True, hide_index=True, height=300)
+
+
+# ═══════════════════════════════════════════
+#  PAGE 4 — WEEKLY SYNC (Team Leader only)
+# ═══════════════════════════════════════════
+elif page == "Weekly Sync":
+    page_header("Weekly Sync",
+                "Review all pending changes and export to update the master Excel files")
+
+    unsynced = load_unsynced_changes()
+    all_changes = pd.read_sql(
+        "SELECT * FROM change_log ORDER BY changed_at DESC",
+        get_conn()
+    ) if True else pd.DataFrame()
+
+    # Summary banner
+    if unsynced.empty:
+        st.success("✅ All changes are synced. Nothing pending.")
+    else:
+        st.markdown(
+            f'<div style="background:#fff8e1;border:1px solid #f0b429;border-left:4px solid #f0b429;' 
+            f'border-radius:8px;padding:16px 20px;margin-bottom:20px;">' 
+            f'<div style="font-size:16px;font-weight:600;color:#5c3d00;margin-bottom:6px;">' 
+            f'⚠️ {len(unsynced)} unsynced change(s) need to be applied to the master Excel files</div>' 
+            f'<div style="font-size:13px;color:#7a5000;line-height:1.7;">' 
+            f'These changes exist only in the app database and will be lost if the server resets.<br>' 
+            f'Export the file below, apply the changes to your Excel files, ' 
+            f'then click "Mark all as synced".</div></div>',
+            unsafe_allow_html=True
+        )
+
+    st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
+
+    # ── Pending changes table ──
+    sec(f"Pending changes ({len(unsynced)})")
+    if not unsynced.empty:
+        # Color code by action type
+        def action_badge(a):
+            colors = {"ADD": "b-green", "EDIT": "b-blue",
+                      "COVERAGE": "b-orange"}
+            return colors.get(a, "b-gray")
+
+        for _, r in unsynced.iterrows():
+            with st.expander(
+                f"{r['action']}  ·  {r['area']}  ·  {r['changed_by']}  ·  {r['changed_at'][:16]}"
+            ):
+                c1, c2 = st.columns(2)
+                with c1:
+                    fld("Action", r["action"], action_badge(r["action"]))
+                    fld("Area / scope", r["area"])
+                    fld("Changed by", r["changed_by"])
+                with c2:
+                    fld("Details", r["detail"])
+                    fld("Date & time", r["changed_at"])
+                    fld("Synced to Excel", "No — pending" )
+    else:
+        st.info("No pending changes.")
+
+    st.markdown("---")
+
+    # ── Export button ──
+    sec("Export for Excel update")
+    st.caption(
+        "Download this file, open your master Excel, and apply the listed changes. "
+        "Once done, click 'Mark all as synced' so the counter resets."
+    )
+
+    col_exp, col_mark = st.columns([2, 1])
+
+    with col_exp:
+        if not unsynced.empty:
+            # Build a clean export with instructions
+            export_rows = []
+            for _, r in unsynced.iterrows():
+                export_rows.append({
+                    "Action": r["action"],
+                    "Area / Scope": r["area"],
+                    "Details": r["detail"],
+                    "Changed by": r["changed_by"],
+                    "Date": r["changed_at"],
+                    "Apply to file": (
+                        "Riyadh_Zone_Eng_Log.xlsx"
+                        if r["action"] in ("ADD","EDIT")
+                        else "Coverage — no Excel change needed"
+                    ),
+                    "Synced": "NO — PENDING"
+                })
+            export_df = pd.DataFrame(export_rows)
+
+            # Also include full custom areas snapshot
+            custom_snap = load_custom_areas()
+
+            import io as _io
+            buf = _io.BytesIO()
+            with pd.ExcelWriter(buf, engine="openpyxl") as writer:
+                export_df.to_excel(writer, sheet_name="Pending Changes", index=False)
+                if not custom_snap.empty:
+                    custom_snap.drop(columns=["id","source"], errors="ignore").to_excel(
+                        writer, sheet_name="All Custom Areas", index=False
+                    )
+                all_changes.to_excel(writer, sheet_name="Full History", index=False)
+            buf.seek(0)
+
+            from datetime import date as _date
+            fname = f"SOCOTEC_Zone_Changes_{_date.today()}.xlsx"
+            st.download_button(
+                f"📥 Download sync file ({len(unsynced)} changes)",
+                buf.getvalue(), fname,
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                type="primary", use_container_width=True
+            )
+        else:
+            st.info("Nothing to export — all changes are synced.")
+
+    with col_mark:
+        if not unsynced.empty:
+            st.markdown("<div style='height:4px'></div>", unsafe_allow_html=True)
+            if st.button("✅ Mark all as synced", use_container_width=True, type="secondary"):
+                mark_all_synced()
+                st.success("All changes marked as synced.")
+                st.rerun()
+
+    # ── Full history ──
+    st.markdown("---")
+    sec("Full change history")
+    try:
+        hist = pd.read_sql(
+            "SELECT action, area, detail, changed_by, changed_at, "
+            "CASE WHEN synced=1 THEN 'Yes' ELSE 'No' END as synced "
+            "FROM change_log ORDER BY changed_at DESC",
+            get_conn()
+        )
+        if hist.empty:
+            st.info("No changes recorded yet.")
+        else:
+            st.dataframe(hist, use_container_width=True, hide_index=True, height=300)
+    except:
+        st.info("No history yet.")
