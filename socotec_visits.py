@@ -277,15 +277,40 @@ details[data-testid="stExpander"] summary {
     border-bottom: 2px solid #d5e3f0;
 }
 
-/* Input */
-.stTextInput input, .stTextArea textarea {
+/* Input fields — clearly visible on white background */
+.stTextInput input, .stTextArea textarea,
+div[data-baseweb="input"] input,
+div[data-baseweb="textarea"] textarea {
+    background: #eef3f9 !important;
+    border: 1.5px solid #b8cfe8 !important;
     border-radius: 7px !important;
-    border-color: #c8d8eb !important;
+    color: #0b1f3a !important;
     font-family: 'DM Sans', sans-serif !important;
+    font-size: 14px !important;
 }
-.stTextInput input:focus, .stTextArea textarea:focus {
+.stTextInput input:focus, .stTextArea textarea:focus,
+div[data-baseweb="input"] input:focus {
+    background: #ffffff !important;
     border-color: #0078d4 !important;
-    box-shadow: 0 0 0 2.5px rgba(0,120,212,0.12) !important;
+    box-shadow: 0 0 0 2.5px rgba(0,120,212,0.15) !important;
+}
+/* Selectbox */
+div[data-baseweb="select"] > div {
+    background: #eef3f9 !important;
+    border: 1.5px solid #b8cfe8 !important;
+    border-radius: 7px !important;
+    color: #0b1f3a !important;
+}
+div[data-baseweb="select"] > div:focus-within {
+    background: #ffffff !important;
+    border-color: #0078d4 !important;
+    box-shadow: 0 0 0 2.5px rgba(0,120,212,0.15) !important;
+}
+/* Date input */
+div[data-baseweb="input"] {
+    background: #eef3f9 !important;
+    border: 1.5px solid #b8cfe8 !important;
+    border-radius: 7px !important;
 }
 
 /* Dataframe */
