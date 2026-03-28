@@ -608,7 +608,7 @@ with st.sidebar:
         nav_opts.append("Coverage Manager")
         nav_opts.append("Weekly Sync")
 
-    page = st.radio("", nav_opts, label_visibility="collapsed")
+    page = st.radio("Navigation", nav_opts, label_visibility="collapsed")
 
     st.markdown("<hr>", unsafe_allow_html=True)
     if st.button("Refresh", use_container_width=True):
@@ -682,11 +682,11 @@ if page == "Zone Directory":
     # Search + source filter
     c1, c2 = st.columns([4, 1])
     with c1:
-        q = st.text_input("", placeholder="Search area, city, engineer, province…",
+        q = st.text_input("Search", placeholder="Search area, city, engineer, province…",
                           label_visibility="collapsed", key="dir_search")
     with c2:
         src_opts = ["All"] + sorted(zone_df["source"].unique())
-        src = st.selectbox("", src_opts, label_visibility="collapsed", key="dir_src")
+        src = st.selectbox("Source", src_opts, label_visibility="collapsed", key="dir_src")
 
     filtered = zone_df.copy()
     if src != "All":
@@ -963,7 +963,7 @@ elif page == "Area Manager":
         if custom_df.empty:
             st.info("No custom entries yet.")
         else:
-            srch = st.text_input("", placeholder="Filter entries…",
+            srch = st.text_input("Search", placeholder="Filter entries…",
                                  label_visibility="collapsed", key="am_search")
             disp = custom_df.copy()
             if srch:
